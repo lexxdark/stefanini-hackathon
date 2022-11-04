@@ -10,7 +10,6 @@ public class HAL extends AdvancedRobot
     private int tooCloseToWall = 0;
     private int wallMargin = 60;
 
-    double prevEnergy = 100.0;
     static double direction = 1.0;
 
     public void run() {
@@ -97,16 +96,16 @@ public class HAL extends AdvancedRobot
         // if we're close to the wall, eventually, we'll move away
         if (tooCloseToWall > 0) tooCloseToWall--;
 
-        // switch directions if we've stopped
+        // switch directions if we've stopped or if enemy fired
         // (also handles moving away from the wall if too close)
-        if (getVelocity() == 0) {
+        if ((getVelocity() == 0) || enemy.getHasFired()) {
             direction *= -1;
             setAhead(10000 * direction);
         }
 
-        if (getTime() % 20 == 0) {
-            direction *= -1;
-        }
+        //if (getTime() % 20 == 0) {
+        //    direction *= -1;
+        //}
     }
 
     public void adjustRadar()
@@ -191,6 +190,7 @@ class EnemyBot
     private double heading;
     private double velocity;
     private String name;
+    private boolean hasFired;
 
     public EnemyBot()
     {
@@ -199,6 +199,7 @@ class EnemyBot
 
     public void update(ScannedRobotEvent e, Robot robot)
     {
+        hasFired = e.getEnergy() < energy;
         bearing = e.getBearing();
         distance = e.getDistance();
         energy = e.getEnergy();
@@ -219,10 +220,11 @@ class EnemyBot
         y = 0;
         bearing = 0;
         distance = 0;
-        energy = 0;
+        energy = 100;
         heading = 0;
         velocity = 0;
         name = "";
+        hasFired = false;
     }
 
     public double getX()
@@ -273,6 +275,11 @@ class EnemyBot
     public String getName()
     {
         return name;
+    }
+
+    public boolean getHasFired()
+    {
+        return hasFired;
     }
 
     public boolean none()
