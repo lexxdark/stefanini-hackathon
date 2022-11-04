@@ -1,4 +1,5 @@
 package HAL;
+import org.jetbrains.annotations.NotNull;
 import robocode.*;
 import robocode.Robot;
 import robocode.util.Utils;
@@ -7,6 +8,8 @@ import java.awt.*;
 import java.awt.geom.Point2D;
 import java.util.*;
 import java.util.List;
+
+import static java.lang.System.out;
 
 public class HAL extends AdvancedRobot
 {
@@ -18,8 +21,7 @@ public class HAL extends AdvancedRobot
 
     static double direction = 1.0;
 
-    private List<FuturePlace> _futurePlaces = new ArrayList<FuturePlace>();
-
+    private List<BulletDescription> bulletDescriptions = new ArrayList<BulletDescription>();
     static HashMap<Bullet, Integer> bulletList = new HashMap<Bullet, Integer>();
     static HashMap<Integer, Integer> bulletHits = new HashMap<Integer, Integer>();
     static HashMap<Integer, Integer> bulletFired = new HashMap<Integer, Integer>();
@@ -206,12 +208,12 @@ public class HAL extends AdvancedRobot
         }
 
         var futurePlace = fireSelection.getNextFire(enemy,this);
-        double absDeg = absoluteBearing(getX(), getY(), futurePlace.getFutureX(), futurePlace.getFutureY());
-        setTurnGunRight(Utils.normalRelativeAngleDegrees(absDeg - getGunHeading()));
+
+        setTurnGunRight(Utils.normalRelativeAngleDegrees(futurePlace.getAbsDeg() - getGunHeading()));
 
         if (getGunHeat() == 0 && Math.abs(getGunTurnRemaining()) < 10) {
-            setFire(futurePlace.getFirePower());
-            this._futurePlaces.add(futurePlace);
+            setFire(futurePlace.getFuturePlace().getFirePower());
+            this.bulletDescriptions.add(futurePlace);
         }
     }
 
@@ -314,15 +316,21 @@ public class HAL extends AdvancedRobot
             g.fillRect((int)Math.round(enemy.getX())-18, (int)Math.round(enemy.getY())-18, 36, 36);
         }
 
-        var time= this.getTime();
-        out.println("We have " + _futurePlaces.size() + " at " + time);
+        onPaintBulletDescriptions(g);
+        this.fireSelection.Paint(this.getTime(), g);
+    }
 
-        for (int i=0; i < _futurePlaces.size(); i++) {
-            var futurePlace = _futurePlaces.get(i);
+    private void onPaintBulletDescriptions(Graphics2D g) {
+        var time= this.getTime();
+        out.println("We have " + bulletDescriptions.size() + " at " + time);
+
+        for (int i=0; i < bulletDescriptions.size(); i++) {
+            var bulletDescription = bulletDescriptions.get(i);
+            var futurePlace = bulletDescription.getFuturePlace();
             out.println("Shit " + futurePlace.getFutureX() + " " + futurePlace.getFutureY() + " " + futurePlace.getTime());
             if (time > futurePlace.getTime() + 15) {
                 out.println("removing");
-                _futurePlaces.remove(i);
+                bulletDescriptions.remove(i);
                 i--;
             } else {
                 g.setColor(Color.blue);
@@ -487,8 +495,13 @@ class EnemyBot
 
 class FireSelection
 {
-    private final int index;
+    private int index;
     private ArrayList<FireStrategy> strategies;
+    private int[] strategyBullets;
+    private int[] strategyHitBullets;
+
+    private long lastStrategyChange = 0;
+    private ArrayList<BulletDescription> bullets = new ArrayList<BulletDescription>();
 
     public FireSelection()
     {
@@ -496,14 +509,177 @@ class FireSelection
         this.strategies.add(new BaseStrategy());
         this.strategies.add(new CircularStrategy());
         this.index = 1;
+        this.lastStrategyChange = 0;
+        strategyBullets = new int[this.strategies.size()];
+        strategyHitBullets = new int[this.strategies.size()];
+        out.println("Using strategy " + index + "" + this.strategies.get(index));
     }
 
-    FuturePlace getNextFire(EnemyBot enemyBot, AdvancedRobot robot)
+    BulletDescription getNextFire(EnemyBot enemyBot, AdvancedRobot robot)
     {
-        return this.strategies.get(index).getNextFire(enemyBot, robot);
+        long time = robot.getTime();
+        UpdateBulletStatistics(enemyBot, robot, time);
+        var bullets = new BulletDescription[strategies.size()];
+
+        for (int i = 0; i < strategies.size(); i++)
+        {
+            bullets[i] = getBulletDescription(enemyBot, robot, i, time);
+        }
+
+        AddVirtualBullets(bullets);
+        return bullets[index];
+    }
+
+    public void Paint(long currentTime, Graphics2D g)
+    {
+        for (int i =0; i<this.bullets.size(); i++) {
+            var bullet = this.bullets.get(i);
+            double speed = 20 - 3 * bullet.getFuturePlace().getFirePower();
+            var rad = Math.toRadians(bullet.getAbsDeg());
+            var curX = bullet.getX() + Math.sin(rad) * speed * (currentTime - bullet.getStartTime());
+            var curY = bullet.getY() + Math.cos(rad) * speed * (currentTime - bullet.getStartTime());
+
+            g.setColor(Color.blue);
+            g.drawOval((int)Math.round(curX), (int)Math.round(curY), 2, 2);
+        }
+    }
+
+    private void UpdateBulletStatistics(EnemyBot enemyBot, AdvancedRobot robot, long currentTime) {
+        double battleFieldHeight = robot.getBattleFieldHeight(),
+                battleFieldWidth = robot.getBattleFieldWidth();
+        double enemyX = enemyBot.getX(),
+                enemyY = enemyBot.getY();
+
+        for (int i =0; i<this.bullets.size(); i++) {
+            var bullet = this.bullets.get(i);
+            double speed = 20 - 3 * bullet.getFuturePlace().getFirePower();
+            var rad = Math.toRadians(bullet.getAbsDeg());
+            var curX = bullet.getX() + Math.sin(rad) * speed * (currentTime - bullet.getStartTime());
+            var curY = bullet.getY() + Math.cos(rad) * speed * (currentTime - bullet.getStartTime());
+
+            if (curX < 0 || curY < 0 || curX > battleFieldWidth || curY > battleFieldHeight)
+            {
+                strategyBullets[bullet.getStrategyIndex()]++;
+                bullets.remove(i);
+                i--;
+            }
+
+            if (curX > enemyX - 18 && curX < enemyX + 18 && curY > enemyY -18 && curY < enemyY + 18)
+            {
+                strategyBullets[bullet.getStrategyIndex()]++;
+                strategyHitBullets[bullet.getStrategyIndex()]++;
+                bullets.remove(i);
+                i--;
+            }
+        }
+
+        double[] percentages = new double[strategies.size()];
+        int maxIndex = 0;
+        double percentage = 0;
+        for (int i=0; i<strategies.size(); i++) {
+            if (strategyBullets[i] > 0) {
+                percentages[i] = strategyHitBullets[i]/strategyBullets[i];
+            } else {
+                percentages[i] = 0;
+            }
+
+            if (percentages[i] > percentage) {
+                maxIndex = i;
+                percentage = percentages[i];
+            }
+        }
+
+        if (lastStrategyChange + 30 < currentTime && maxIndex != this.index) {
+            out.println("Switching strategy from " + index + "" + this.strategies.get(index).getId() + " to " + maxIndex + " " + this.strategies.get(maxIndex).getId());
+            this.index = maxIndex;
+            this.lastStrategyChange = currentTime;
+        }
+    }
+
+    private void AddVirtualBullets(BulletDescription[] bullets)
+    {
+        for (int i =0; i < bullets.length; i++) {
+            this.bullets.add(bullets[i]);
+        }
+    }
+
+    @NotNull
+    private BulletDescription getBulletDescription(EnemyBot enemyBot, AdvancedRobot robot, int strategyIndex, long currentTime) {
+        var futurePlace = this.strategies.get(strategyIndex).getNextFire(enemyBot, robot);
+        double x = robot.getX();
+        double y = robot.getY();
+        double absDeg = absoluteBearing(x, y, futurePlace.getFutureX(), futurePlace.getFutureY());
+        var startTime = currentTime;
+        var bulletDescription = new BulletDescription(strategyIndex, futurePlace, startTime, x, y, absDeg);
+
+        return bulletDescription;
+    }
+
+    double absoluteBearing(double x1, double y1, double x2, double y2) {
+        double xo = x2-x1;
+        double yo = y2-y1;
+        double hyp = Point2D.distance(x1, y1, x2, y2);
+        double arcSin = Math.toDegrees(Math.asin(xo / hyp));
+        double bearing = 0;
+
+        if (xo > 0 && yo > 0) { // both pos: lower-Left
+            bearing = arcSin;
+        } else if (xo < 0 && yo > 0) { // x neg, y pos: lower-right
+            bearing = 360 + arcSin; // arcsin is negative here, actuall 360 - ang
+        } else if (xo > 0 && yo < 0) { // x pos, y neg: upper-left
+            bearing = 180 - arcSin;
+        } else if (xo < 0 && yo < 0) { // both neg: upper-right
+            bearing = 180 - arcSin; // arcsin is negative here, actually 180 + ang
+        }
+
+        return bearing;
     }
 }
 
+
+class BulletDescription
+{
+    private int strategyIndex;
+    private FuturePlace futurePlace;
+    private long startTime;
+    private double x;
+    private double y;
+    private double absDeg;
+
+    public BulletDescription(int strategyIndex, FuturePlace futurePlace, long startTime, double x, double y, double absDeg)
+    {
+        this.strategyIndex = strategyIndex;
+        this.futurePlace = futurePlace;
+        this.startTime = startTime;
+        this.x = x;
+        this.y = y;
+        this.absDeg = absDeg;
+    }
+
+    public FuturePlace getFuturePlace() {
+        return futurePlace;
+    }
+
+    public double getX() {
+        return x;
+    }
+
+    public double getY() {
+        return y;
+    }
+
+    public double getAbsDeg() {
+        return absDeg;
+    }
+
+    public long getStartTime() {
+        return startTime;
+    }
+
+    public int getStrategyIndex() {
+        return strategyIndex;
+    }
+}
 
 interface FireStrategy
 {
@@ -514,7 +690,6 @@ interface FireStrategy
 
 class BaseStrategy implements FireStrategy
 {
-
     @Override
     public String getId() {
         return "base";
@@ -527,8 +702,7 @@ class BaseStrategy implements FireStrategy
         double firePower = Math.min(400 / enemyBot.getDistance(),3);
         double bulletSpeed = 20 - firePower * 3;
         long time = (long)(enemyBot.getDistance() / bulletSpeed);
-        var futurePlace = new FuturePlace(
-                enemyBot.getFutureX(time), enemyBot.getFutureY(time), robot.getTime() + time, firePower);
+        var futurePlace = new FuturePlace(enemyBot.getFutureX(time), enemyBot.getFutureY(time), robot.getTime() + time, firePower);
         return futurePlace;
     }
 }
@@ -551,27 +725,25 @@ class CircularStrategy implements FireStrategy
         double enemyHeadingChangeRad = enemyHeadingRad - Math.toRadians(enemyBot.getOldEnemyHeading());
         double enemyVelocity = enemyBot.getVelocity();
 
-
-        long deltaTime = 0;
+        long bulletTime = 0;
         double battleFieldHeight = robot.getBattleFieldHeight(),
                 battleFieldWidth = robot.getBattleFieldWidth();
         double predictedX = enemyX, predictedY = enemyY;
-        while ((++deltaTime) * (20.0 - 3.0 * firePower) < Point2D.Double.distance(myX, myY, predictedX, predictedY)) {
+        while (bulletTime * (20.0 - 3.0 * firePower) < Point2D.Double.distance(myX, myY, predictedX, predictedY))
+        {
+            bulletTime++;
             predictedX += Math.sin(enemyHeadingRad) * enemyVelocity;
             predictedY += Math.cos(enemyHeadingRad) * enemyVelocity;
             enemyHeadingRad += enemyHeadingChangeRad;
-            if (predictedX < 18.0
-                    || predictedY < 18.0
-                    || predictedX > battleFieldWidth - 18.0
-                    || predictedY > battleFieldHeight - 18.0) {
-
+            if (predictedX < 18.0 || predictedY < 18.0
+                    || predictedX > battleFieldWidth - 18.0 || predictedY > battleFieldHeight - 18.0) {
                 predictedX = Math.min(Math.max(18.0, predictedX), battleFieldWidth - 18.0);
                 predictedY = Math.min(Math.max(18.0, predictedY), battleFieldHeight - 18.0);
                 break;
             }
         }
 
-        return new FuturePlace(predictedX, predictedY, robot.getTime() + deltaTime, firePower);
+        return new FuturePlace(predictedX, predictedY, robot.getTime() + bulletTime, firePower);
 
     }
 }
