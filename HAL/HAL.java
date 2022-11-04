@@ -1,7 +1,12 @@
 package HAL;
 import robocode.*;
+import robocode.Robot;
 import robocode.util.Utils;
+
+import java.awt.*;
 import java.awt.geom.Point2D;
+import java.util.ArrayList;
+import java.util.List;
 
 public class HAL extends AdvancedRobot
 {
@@ -11,6 +16,8 @@ public class HAL extends AdvancedRobot
     private int wallMargin = 60;
 
     static double direction = 1.0;
+
+    private List<FuturePlace> _futurePlaces = new ArrayList<FuturePlace>();
 
     public void run() {
 
@@ -148,13 +155,14 @@ public class HAL extends AdvancedRobot
         double firePower = Math.min(400 / enemy.getDistance(),3);
         double bulletSpeed = 20 - firePower * 3;
         long time = (long)(enemy.getDistance() / bulletSpeed);
-        double futureX = enemy.getFutureX(time);
-        double futureY = enemy.getFutureY(time);
-        double absDeg = absoluteBearing(getX(), getY(), futureX, futureY);
+        var futurePlace = new FuturePlace(enemy.getFutureX(time), enemy.getFutureY(time), this.getTime() + time);
+        double absDeg = absoluteBearing(getX(), getY(), futurePlace.getFutureX(), futurePlace.getFutureY());
         setTurnGunRight(Utils.normalRelativeAngleDegrees(absDeg - getGunHeading()));
 
         if (getGunHeat() == 0 && Math.abs(getGunTurnRemaining()) < 10) {
             setFire(firePower);
+
+            this._futurePlaces.add(futurePlace);
         }
     }
 
@@ -176,6 +184,62 @@ public class HAL extends AdvancedRobot
         }
 
         return bearing;
+    }
+
+    @Override
+    public void onPaint(Graphics2D g) {
+
+        if (!enemy.none())
+        {
+            g.setColor(Color.red);
+            g.fillRect((int)Math.round(enemy.getX())-18, (int)Math.round(enemy.getY())-18, 36, 36);
+        }
+
+        var time= this.getTime();
+        out.println("We have " + _futurePlaces.size() + " at " + time);
+
+        for (int i=0; i < _futurePlaces.size(); i++) {
+            var futurePlace = _futurePlaces.get(i);
+            out.println("Shit " + futurePlace.getFutureX() + " " + futurePlace.getFutureY() + " " + futurePlace.getTime());
+            if (time > futurePlace.getTime()) {
+                out.println("removing");
+                _futurePlaces.remove(i);
+                i--;
+            } else {
+                g.setColor(Color.blue);
+                g.fillRect(
+                        (int)Math.round(futurePlace.getFutureX())-18,
+                        (int)Math.round(enemy.getY())-18,
+                        36, 36);
+            }
+        }
+    }
+}
+
+class FuturePlace
+{
+    private double futureX;
+    private double futureY;
+    private long time;
+
+    public FuturePlace(double futureX, double futureY, long time)
+    {
+
+        this.futureX = futureX;
+        this.futureY = futureY;
+        this.time = time;
+    }
+
+    public double getFutureX() {
+        return futureX;
+    }
+
+    public double getFutureY() {
+        return futureY;
+    }
+
+    public long getTime() {
+        return time;
     }
 }
 
