@@ -381,6 +381,8 @@ class EnemyBot
     private String name;
     private boolean hasFired;
 
+    private double oldEnemyHeading;
+
     public EnemyBot()
     {
         reset();
@@ -388,6 +390,7 @@ class EnemyBot
 
     public void update(ScannedRobotEvent e, Robot robot)
     {
+        oldEnemyHeading = heading;
         hasFired = e.getEnergy() < energy;
         bearing = e.getBearing();
         distance = e.getDistance();
@@ -475,6 +478,10 @@ class EnemyBot
     {
         return name.isEmpty();
     }
+
+    public double getOldEnemyHeading() {
+        return oldEnemyHeading;
+    }
 }
 
 
@@ -485,12 +492,13 @@ class FireSelection
 
     public FireSelection()
     {
-        this.strategies = new FireStrategy[1];
+        this.strategies = new FireStrategy[2];
         this.strategies[0] = new BaseStrategy();
-        this.index = 0;
+        this.strategies[1] = new CircularStrategy();
+        this.index = 1;
     }
 
-    FuturePlace getNextFire(EnemyBot enemyBot, Robot robot)
+    FuturePlace getNextFire(EnemyBot enemyBot, AdvancedRobot robot)
     {
         return this.strategies[index].getNextFire(enemyBot, robot);
     }
@@ -501,7 +509,7 @@ interface FireStrategy
 {
     String getId();
 
-    FuturePlace getNextFire(EnemyBot enemyBot, Robot robot);
+    FuturePlace getNextFire(EnemyBot enemyBot, AdvancedRobot robot);
 }
 
 class BaseStrategy implements FireStrategy
@@ -513,7 +521,7 @@ class BaseStrategy implements FireStrategy
     }
 
     @Override
-    public FuturePlace getNextFire(EnemyBot enemyBot, Robot robot) {
+    public FuturePlace getNextFire(EnemyBot enemyBot, AdvancedRobot robot) {
         if (enemyBot.none())
             return null;
         double firePower = Math.min(400 / enemyBot.getDistance(),3);
@@ -523,6 +531,47 @@ class BaseStrategy implements FireStrategy
                 enemyBot.getFutureX(time), enemyBot.getFutureY(time), robot.getTime() + time, firePower);
         return futurePlace;
     }
+}
+
+class CircularStrategy implements FireStrategy
+{
+    @Override
+    public String getId() {
+        return "circular";
+    }
+
+    @Override
+    public FuturePlace getNextFire(EnemyBot enemyBot, AdvancedRobot robot) {
+        double firePower = Math.min(400 / enemyBot.getDistance(), 3);
+        double myX = robot.getX();
+        double myY = robot.getY();
+        double enemyX = enemyBot.getX();
+        double enemyY = enemyBot.getY();
+        double enemyHeadingRad = Math.toRadians(enemyBot.getHeading());
+        double enemyHeadingChangeRad = enemyHeadingRad - Math.toRadians(enemyBot.getOldEnemyHeading());
+        double enemyVelocity = enemyBot.getVelocity();
 
 
+        long deltaTime = 0;
+        double battleFieldHeight = robot.getBattleFieldHeight(),
+                battleFieldWidth = robot.getBattleFieldWidth();
+        double predictedX = enemyX, predictedY = enemyY;
+        while ((++deltaTime) * (20.0 - 3.0 * firePower) < Point2D.Double.distance(myX, myY, predictedX, predictedY)) {
+            predictedX += Math.sin(enemyHeadingRad) * enemyVelocity;
+            predictedY += Math.cos(enemyHeadingRad) * enemyVelocity;
+            enemyHeadingRad += enemyHeadingChangeRad;
+            if (predictedX < 18.0
+                    || predictedY < 18.0
+                    || predictedX > battleFieldWidth - 18.0
+                    || predictedY > battleFieldHeight - 18.0) {
+
+                predictedX = Math.min(Math.max(18.0, predictedX), battleFieldWidth - 18.0);
+                predictedY = Math.min(Math.max(18.0, predictedY), battleFieldHeight - 18.0);
+                break;
+            }
+        }
+
+        return new FuturePlace(predictedX, predictedY, robot.getTime() + deltaTime, firePower);
+
+    }
 }
