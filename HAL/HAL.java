@@ -17,7 +17,9 @@ public class HAL extends AdvancedRobot
     private FireSelection fireSelection = new FireSelection();
     private byte radarDirection = 1;
     private int tooCloseToWall = 0;
-    private int wallMargin = 60;
+    private long lastDirectionChange = -9999;
+    private int directionChangeMargin = 20;
+    private int wallMargin = 100;
 
     static double direction = 1.0;
 
@@ -86,7 +88,7 @@ public class HAL extends AdvancedRobot
             if (tooCloseToWall <= 0) {
                 tooCloseToWall += wallMargin;
                 direction = -1 * direction;
-                //setMaxVelocity(0); // stop!!!
+                out.println("change dir too close");
             }
         }
     }
@@ -95,7 +97,7 @@ public class HAL extends AdvancedRobot
      * onHitWall: What to do when you hit a wall
      */
     public void onHitWall(HitWallEvent e) {
-        direction = -1 * direction;
+       // direction = -1 * direction;
         out.println("Hit wall");
     }
 
@@ -153,20 +155,30 @@ public class HAL extends AdvancedRobot
     {
         // always square off our enemy, turning slightly toward him
         setTurnRight(Utils.normalRelativeAngleDegrees(enemy.getBearing() + 90 - (15 * direction)));
+        double xDistanceToWall =  getBattleFieldWidth()-getX();
+        double yDistanceToWall = getBattleFieldHeight()-getY();
 
+        boolean tooClose = (xDistanceToWall<=wallMargin || yDistanceToWall<=wallMargin || getX()<=wallMargin || getY()<=wallMargin);
+        
         // if we're close to the wall, eventually, we'll move away
         if (tooCloseToWall > 0) tooCloseToWall--;
 
         // switch directions if we've stopped or if enemy fired
         // (also handles moving away from the wall if too close)
-        if ((getVelocity() == 0) || enemy.getHasFired()) {
-            direction *= -1;
-            setAhead(10000 * direction);
+        if ((getVelocity() == 0) || (enemy.getHasFired() && !tooClose)) {
+            if (changeDirection()) {
+                setAhead(10000 * direction);
+            }
         }
+    }
 
-        //if (getTime() % 20 == 0) {
-        //    direction *= -1;
-        //}
+    private boolean changeDirection() {
+        if ((getTime() - lastDirectionChange) > directionChangeMargin) {
+            direction *= -1;
+            lastDirectionChange = getTime();
+            return true;
+        }
+        return false;
     }
 
     public void adjustRadar()
