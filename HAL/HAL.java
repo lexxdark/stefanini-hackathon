@@ -20,6 +20,12 @@ public class HAL extends AdvancedRobot
 
     private List<FuturePlace> _futurePlaces = new ArrayList<FuturePlace>();
 
+    static HashMap<Bullet, Integer> bulletList = new HashMap<Bullet, Integer>();
+    static HashMap<Integer, Integer> bulletHits = new HashMap<Integer, Integer>();
+    static HashMap<Integer, Integer> bulletFired = new HashMap<Integer, Integer>();
+    static Random randomizer = new Random();
+    int bulletCount = 0;
+
     public void run() {
 
         // Initialization of the robot should be put here
@@ -46,6 +52,7 @@ public class HAL extends AdvancedRobot
             adjustRadar();
             adjustMovement();
             setFire();
+            //setFireWeightedRandom();
             execute();
         }
     }
@@ -96,6 +103,50 @@ public class HAL extends AdvancedRobot
         out.println("Hit robot");
     }
 
+    public void onBulletHit(BulletHitEvent e) {
+        Bullet bullet = e.getBullet();
+
+        if (bulletList.containsKey(bullet)) {
+            Integer delta = bulletList.get(bullet);
+            out.println("Hit with delta " + delta);
+            if (!bulletHits.containsKey(delta)) {
+                bulletHits.put(delta, 1);
+            }
+            else {
+                Integer hit = bulletHits.get(delta);
+                bulletHits.replace(delta, hit+1);
+            }
+            bulletList.remove(bullet);
+        }
+    }
+
+    public void onBulletHitBullet(BulletHitBulletEvent e) {
+        Bullet bullet = e.getBullet();
+
+        if (bulletList.containsKey(bullet)) {
+            bulletList.remove(bullet);
+        }
+    }
+
+    public void onBulletMissed(BulletMissedEvent e) {
+        Bullet bullet = e.getBullet();
+
+        if (bulletList.containsKey(bullet)) {
+            Integer delta = bulletList.get(bullet);
+            out.println("Miss with delta " + delta);
+
+            bulletList.remove(bullet);
+         }
+    }
+
+    public void onRoundEnded(RoundEndedEvent e) {
+        for (Map.Entry<Integer, Integer> set : bulletFired.entrySet()) {
+            int hits = bulletHits.get(set.getKey());
+            int fired = set.getValue();
+            out.println("For delta " + set.getKey() + " : " + (double)hits/(double)fired*100 + " (" + hits + "/" + fired + ")");
+        }
+    }
+
     public void adjustMovement()
     {
         // always square off our enemy, turning slightly toward him
@@ -123,9 +174,9 @@ public class HAL extends AdvancedRobot
             return;
         }
 
-		/*if ( getRadarTurnRemaining() == 0.0 ) {
+        /*if ( getRadarTurnRemaining() == 0.0 ) {
             setTurnRadarRightRadians( Double.POSITIVE_INFINITY );
-		}*/
+        }*/
 
         double angleToEnemy = getHeading() + enemy.getBearing();
 
@@ -162,6 +213,76 @@ public class HAL extends AdvancedRobot
             setFire(futurePlace.getFirePower());
             this._futurePlaces.add(futurePlace);
         }
+    }
+
+    public void setFireWeightedRandom()
+    {
+        if (enemy.none()) {
+            return;
+        }
+        double firePower = Math.min(400 / enemy.getDistance(),3);
+        double bulletSpeed = 20 - firePower * 3;
+        long time = (long)(enemy.getDistance() / bulletSpeed);
+        double futureX = enemy.getFutureX(time);
+        double futureY = enemy.getFutureY(time);
+        double absDeg = absoluteBearing(getX(), getY(), futureX, futureY);
+        int delta = getDelta();
+        setTurnGunRight(Utils.normalRelativeAngleDegrees(absDeg + delta - getGunHeading()));
+
+        if (getGunHeat() == 0 && Math.abs(getGunTurnRemaining()) < 10) {
+            bulletList.put(setFireBullet(firePower), delta);
+            if (!bulletFired.containsKey(delta)) {
+                bulletFired.put(delta, 1);
+                bulletHits.put(delta, 0);
+            }
+            else {
+                bulletFired.replace(delta, bulletFired.get(delta)+1);
+            }
+            bulletCount++;
+        }
+    }
+    
+    private int getDelta() {
+        if (((getNumRounds() == 0) && (bulletCount < 10)) || (getRoundNum() == 0)) {
+            return (randomizer.nextInt(10)-5) * 5;
+        }
+        
+        ArrayList<Integer> bestDeltas = new ArrayList<Integer>();
+        ArrayList<Double> bestValues = new ArrayList<Double>();
+        int numDeltas = 4;
+        for (Map.Entry<Integer, Integer> set : bulletFired.entrySet()) {
+            double value = (double)bulletHits.get(set.getKey()) / (double)set.getValue();
+            if (bestDeltas.size() < numDeltas) {
+                bestDeltas.add(set.getKey());
+                bestValues.add(value);
+            }
+            else {
+                boolean isGreater = true;
+                for (int i = 0; (i < numDeltas) && isGreater; i++) {
+                    if (bestValues.get(i) > value) {
+                        isGreater = false;
+                    }
+                }
+                if (isGreater) {
+                    int minIndex = 0;
+                    double minValue = bestValues.get(minIndex);
+                    for (int i = 1; i < numDeltas; i++) {
+                        if (bestValues.get(i) < minValue) {
+                            minIndex = i;
+                            minValue = bestValues.get(i);
+                        }
+                    }
+                    bestValues.set(minIndex, value);
+                    bestDeltas.set(minIndex, set.getKey());
+                }
+            }
+        }
+        int bestIndex = randomizer.nextInt(numDeltas);
+        Integer bestDelta = bestDeltas.get(bestIndex);
+        double bestValue = bestValues.get(bestIndex);
+        out.println("Best delta is " + bestDelta + " with value " + bestValue);     
+
+        return bestDelta;
     }
 
     double absoluteBearing(double x1, double y1, double x2, double y2) {
