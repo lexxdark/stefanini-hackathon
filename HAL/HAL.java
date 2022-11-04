@@ -10,7 +10,7 @@ public class HAL extends AdvancedRobot
     private int tooCloseToWall = 0;
     private int wallMargin = 60;
 
-    static double prevEnergy = 100.0;
+    double prevEnergy = 100.0;
     static double direction = 1.0;
 
     public void run() {
