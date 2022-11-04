@@ -5,7 +5,7 @@ import robocode.util.Utils;
 
 import java.awt.*;
 import java.awt.geom.Point2D;
-import java.util.ArrayList;
+import java.util.*;
 import java.util.List;
 
 public class HAL extends AdvancedRobot
