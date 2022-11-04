@@ -11,6 +11,7 @@ import java.util.List;
 public class HAL extends AdvancedRobot
 {
     private EnemyBot enemy = new EnemyBot();
+    private FireSelection fireSelection = new FireSelection();
     private byte radarDirection = 1;
     private int tooCloseToWall = 0;
     private int wallMargin = 60;
@@ -152,16 +153,13 @@ public class HAL extends AdvancedRobot
         if (enemy.none()) {
             return;
         }
-        double firePower = Math.min(400 / enemy.getDistance(),3);
-        double bulletSpeed = 20 - firePower * 3;
-        long time = (long)(enemy.getDistance() / bulletSpeed);
-        var futurePlace = new FuturePlace(enemy.getFutureX(time), enemy.getFutureY(time), this.getTime() + time);
+
+        var futurePlace = fireSelection.getNextFire(enemy,this);
         double absDeg = absoluteBearing(getX(), getY(), futurePlace.getFutureX(), futurePlace.getFutureY());
         setTurnGunRight(Utils.normalRelativeAngleDegrees(absDeg - getGunHeading()));
 
         if (getGunHeat() == 0 && Math.abs(getGunTurnRemaining()) < 10) {
-            setFire(firePower);
-
+            setFire(futurePlace.getFirePower());
             this._futurePlaces.add(futurePlace);
         }
     }
@@ -201,7 +199,7 @@ public class HAL extends AdvancedRobot
         for (int i=0; i < _futurePlaces.size(); i++) {
             var futurePlace = _futurePlaces.get(i);
             out.println("Shit " + futurePlace.getFutureX() + " " + futurePlace.getFutureY() + " " + futurePlace.getTime());
-            if (time > futurePlace.getTime()) {
+            if (time > futurePlace.getTime() + 15) {
                 out.println("removing");
                 _futurePlaces.remove(i);
                 i--;
@@ -209,7 +207,7 @@ public class HAL extends AdvancedRobot
                 g.setColor(Color.blue);
                 g.fillRect(
                         (int)Math.round(futurePlace.getFutureX())-18,
-                        (int)Math.round(enemy.getY())-18,
+                        (int)Math.round(futurePlace.getFutureY())-18,
                         36, 36);
             }
         }
@@ -221,13 +219,15 @@ class FuturePlace
     private double futureX;
     private double futureY;
     private long time;
+    private double firePower;
 
-    public FuturePlace(double futureX, double futureY, long time)
+    public FuturePlace(double futureX, double futureY, long time, double firePower)
     {
 
         this.futureX = futureX;
         this.futureY = futureY;
         this.time = time;
+        this.firePower = firePower;
     }
 
     public double getFutureX() {
@@ -240,6 +240,10 @@ class FuturePlace
 
     public long getTime() {
         return time;
+    }
+
+    public double getFirePower() {
+        return firePower;
     }
 }
 
@@ -350,4 +354,54 @@ class EnemyBot
     {
         return name.isEmpty();
     }
+}
+
+
+class FireSelection
+{
+    private final int index;
+    private FireStrategy[] strategies;
+
+    public FireSelection()
+    {
+        this.strategies = new FireStrategy[1];
+        this.strategies[0] = new BaseStrategy();
+        this.index = 0;
+    }
+
+    FuturePlace getNextFire(EnemyBot enemyBot, Robot robot)
+    {
+        return this.strategies[index].getNextFire(enemyBot, robot);
+    }
+}
+
+
+interface FireStrategy
+{
+    String getId();
+
+    FuturePlace getNextFire(EnemyBot enemyBot, Robot robot);
+}
+
+class BaseStrategy implements FireStrategy
+{
+
+    @Override
+    public String getId() {
+        return "base";
+    }
+
+    @Override
+    public FuturePlace getNextFire(EnemyBot enemyBot, Robot robot) {
+        if (enemyBot.none())
+            return null;
+        double firePower = Math.min(400 / enemyBot.getDistance(),3);
+        double bulletSpeed = 20 - firePower * 3;
+        long time = (long)(enemyBot.getDistance() / bulletSpeed);
+        var futurePlace = new FuturePlace(
+                enemyBot.getFutureX(time), enemyBot.getFutureY(time), robot.getTime() + time, firePower);
+        return futurePlace;
+    }
+
+
 }

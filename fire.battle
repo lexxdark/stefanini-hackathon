@@ -1,4 +1,6 @@
 #Battle Properties
 #Thu Nov 03 13:04:25 EET 2022
 #robocode.battle.selectedRobots=TestRobot*,sample.SittingDuck
-robocode.battle.selectedRobots=HAL.HAL*,sample.Fire
+#robocode.battle.selectedRobots=HAL.HAL*,sample.Fire
+robocode.battle.selectedRobots=HAL.HAL*,kurt.robot.KurtWaveSurfer 1.6\
+robocode.battle.selectedRobots=HAL.HAL*,HAL.HAL 1.0
