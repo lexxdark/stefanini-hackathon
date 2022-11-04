@@ -1,0 +1,4 @@
+#Battle Properties
+#Thu Nov 03 13:04:25 EET 2022
+#robocode.battle.selectedRobots=TestRobot*,sample.SittingDuck
+robocode.battle.selectedRobots=HAL.HAL*,sample.Fire
