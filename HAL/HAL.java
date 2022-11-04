@@ -481,18 +481,18 @@ class EnemyBot
 class FireSelection
 {
     private final int index;
-    private FireStrategy[] strategies;
+    private ArrayList<FireStrategy> strategies;
 
     public FireSelection()
     {
-        this.strategies = new FireStrategy[1];
-        this.strategies[0] = new BaseStrategy();
+        this.strategies = new ArrayList<FireStrategy>();
+        this.strategies.add(new BaseStrategy());
         this.index = 0;
     }
 
     FuturePlace getNextFire(EnemyBot enemyBot, Robot robot)
     {
-        return this.strategies[index].getNextFire(enemyBot, robot);
+        return this.strategies.get(index).getNextFire(enemyBot, robot);
     }
 }
 
