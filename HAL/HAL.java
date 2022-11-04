@@ -15,6 +15,8 @@ public class HAL extends AdvancedRobot
     private byte radarDirection = 1;
     private int tooCloseToWall = 0;
     private int wallMargin = 60;
+	private long lastDirectionChange = -9999;
+	private int directionChangeMargin = 20;
 
     static double direction = 1.0;
 
@@ -158,13 +160,19 @@ public class HAL extends AdvancedRobot
         // switch directions if we've stopped or if enemy fired
         // (also handles moving away from the wall if too close)
         if ((getVelocity() == 0) || enemy.getHasFired()) {
-            direction *= -1;
-            setAhead(10000 * direction);
+            if (changeDirection()) {
+                setAhead(10000 * direction);
+            }
         }
+    }
 
-        //if (getTime() % 20 == 0) {
-        //    direction *= -1;
-        //}
+    private boolean changeDirection() {
+        if ((getTime() - lastDirectionChange) > directionChangeMargin) {
+            direction *= -1;
+            lastDirectionChange = getTime();
+            return true;
+        }
+        return false;
     }
 
     public void adjustRadar()
